@@ -5,7 +5,9 @@ from torch.distributions.categorical import Categorical
 import torch_ac
 from RIM import RIMCell
 
-NUM_UNITS = 4
+#NUM_UNITS = 4
+#k = 2
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
 def init_params(m):
@@ -20,13 +22,16 @@ def init_params(m):
             pass
 
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=True, use_text=False, use_rim = False):
+    def __init__(self, obs_space, action_space, use_memory=True, use_text=False, use_rim = False, num_units=4, k=2):
         super().__init__()
 
         # Decide which components are enabled
         self.use_text = use_text
         self.use_memory = use_memory
         self.use_rim = use_rim
+        if use_rim:
+            self.num_units = num_units
+            self.k = k
 
         # Define image embedding
         self.image_conv = nn.Sequential(
@@ -46,7 +51,7 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         # Define memory
         if self.use_memory:
             if use_rim:
-                self.memory_rnn = RIMCell(torch.device('cuda'), self.image_embedding_size, self.semi_memory_size // NUM_UNITS, NUM_UNITS, k, 'LSTM', input_value_size = 64, comm_value_size = self.semi_memory_size // NUM_UNITS)
+                self.memory_rnn = RIMCell(device, self.image_embedding_size, self.semi_memory_size // self.num_units, self.num_units, self.k, 'LSTM', input_value_size = 64, comm_value_size = self.semi_memory_size // self.num_units)
             else:
                 self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
 
@@ -96,8 +101,8 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
             hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
             if self.use_rim:    
                 hidden = list(hidden)
-                hidden[0] = hidden[0].view(hidden[0].size(0), NUM_UNITS, -1) 
-                hidden[1] = hidden[0].view(hidden[1].size(0), NUM_UNITS, -1)
+                hidden[0] = hidden[0].view(hidden[0].size(0), self.num_units, -1) 
+                hidden[1] = hidden[0].view(hidden[1].size(0), self.num_units, -1)
                 x = x.unsqueeze(1)
 
                 hidden = self.memory_rnn(x, hidden[0], hidden[1])
